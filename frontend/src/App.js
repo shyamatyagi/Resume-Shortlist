@@ -19,7 +19,13 @@ function App() {
     for (let i = 0; i < files.length; i++) {
       formData.append("files", files[i]);
     }
-    await axios.post("http://localhost:8000/upload-resumes/", formData);
+    const res = await axios.post(
+      "http://localhost:8000/upload-resumes/",
+      formData
+    );
+    if (res.status === 200 && res.data && res.data.message) {
+      alert(res.data.message);
+    }
   };
 
   const handleAddRequirement = async () => {

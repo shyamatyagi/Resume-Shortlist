@@ -7,7 +7,11 @@ from sqlalchemy.orm import Session
 import os
 import shutil
 import pdfplumber
-from models import Requirement, Resume, JobRole
+from sentence_transformers import SentenceTransformer, util
+
+# once the model is getting loaded 
+model = SentenceTransformer('all-MiniLM-L6-v2')
+from models import Resume, JobRole
 import csv
 from database import SessionLocal, init_db
 
@@ -67,60 +71,52 @@ def root():
 
 @app.post("/upload-resumes/")
 def upload_resumes(files: List[UploadFile] = File(...), db: Session = Depends(get_db)):
+    # Delete all previous resumes from the database
+    db.query(Resume).delete()
+    db.commit()
     saved_files = []
     for file in files:
         file_location = os.path.join(UPLOAD_DIR, file.filename)
         with open(file_location, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
-        # Extract candidate name (simple: first line of PDF)
-        try:
-            with pdfplumber.open(file_location) as pdf:
-                first_page = pdf.pages[0]
-                text = first_page.extract_text() or ""
-                name = text.split('\n')[0] if text else file.filename
-        except Exception:
-            name = file.filename
-        resume = Resume(name=name, file_path=file_location, match=0.0, color="red")
+        # Use file name as the resume name
+        resume = Resume(name=file.filename, file_path=file_location, match=0.0, color="red", is_new=1)
         db.add(resume)
         saved_files.append(file.filename)
     db.commit()
-    return {"filenames": saved_files}
+    return {"filenames": saved_files, "message": "File(s) uploaded successfully."}
 
 
-@app.post("/requirements/")
-def add_requirement(requirement: str = Form(...), db: Session = Depends(get_db)):
-    req = Requirement(text=requirement)
-    db.add(req)
-    db.commit()
-    db.refresh(req)
-    return {"id": req.id, "requirement": req.text}
 
 
 @app.get("/shortlist/")
 def get_shortlist(db: Session = Depends(get_db)):
-    requirements = db.query(Requirement).all()
-    resumes = db.query(Resume).all()
-    req_keywords = set()
-    for req in requirements:
-        req_keywords.update([w.strip().lower() for w in req.text.split(",")])
+    # Use job_roles table for requirements
+    job_roles = db.query(JobRole).all()
+    resumes = db.query(Resume).filter_by(is_new=1).all()
+
+    # Combine all job role fields into a single string for semantic search
+    job_roles_text = " ".join([
+        f"{role.title} {role.qualification} {role.experience} {role.techstack}" for role in job_roles
+    ])
+    req_embedding = model.encode(job_roles_text, convert_to_tensor=True)
     results = []
     seen = set()
     for res in resumes:
-
         unique_key = (res.file_path, res.name)
         if unique_key in seen:
             continue
         seen.add(unique_key)
-      
         try:
             with pdfplumber.open(res.file_path) as pdf:
                 text = " ".join([page.extract_text() or "" for page in pdf.pages])
         except Exception:
             text = ""
-        text_words = set([w.strip().lower() for w in text.split()])
-        match_count = len(req_keywords & text_words)
-        match_percent = int((match_count / len(req_keywords)) * 100) if req_keywords else 0
-        
+        # Get embedding for resume text
+        resume_embedding = model.encode(text, convert_to_tensor=True)
+        # Compute cosine similarity (0 to 1)
+        similarity = float(util.cos_sim(req_embedding, resume_embedding).item())
+        match_percent = int(similarity * 100)
         if match_percent >= 80:
             color = "green"
         elif match_percent >= 50:
@@ -129,6 +125,7 @@ def get_shortlist(db: Session = Depends(get_db)):
             color = "red"
         res.match = match_percent
         res.color = color
+        res.is_new = 0  # Mark as processed
         db.commit()
         results.append({"name": res.name, "match": match_percent, "color": color})
     return {"results": results}

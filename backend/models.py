@@ -10,6 +10,7 @@ class Resume(Base):
     file_path = Column(String)
     match = Column(Float)
     color = Column(String)
+    is_new = Column(Integer, default=1)  # 1 for True, 0 for False
 
 
 class JobRole(Base):
