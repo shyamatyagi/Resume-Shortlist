@@ -61,6 +61,7 @@ function App() {
           {results.map((r, i) => (
             <li key={i} style={{ color: r.color }}>
               {r.name} - {r.match}%
+              {r.best_title ? ` (Best Title: ${r.best_title})` : ""}
             </li>
           ))}
         </ul>

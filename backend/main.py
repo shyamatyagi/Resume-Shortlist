@@ -95,11 +95,17 @@ def get_shortlist(db: Session = Depends(get_db)):
     job_roles = db.query(JobRole).all()
     resumes = db.query(Resume).filter_by(is_new=1).all()
 
-    # Combine all job role fields into a single string for semantic search
-    job_roles_text = " ".join([
-        f"{role.title} {role.qualification} {role.experience} {role.techstack}" for role in job_roles
-    ])
-    req_embedding = model.encode(job_roles_text, convert_to_tensor=True)
+    # Prepare embeddings for each job role
+    job_roles_info = []
+    for role in job_roles:
+        text = f"{role.title} {role.qualification} {role.experience} {role.techstack}"
+        embedding = model.encode(text, convert_to_tensor=True)
+        job_roles_info.append({
+            "id": role.id,
+            "title": role.title,
+            "embedding": embedding
+        })
+
     results = []
     seen = set()
     for res in resumes:
@@ -112,11 +118,19 @@ def get_shortlist(db: Session = Depends(get_db)):
                 text = " ".join([page.extract_text() or "" for page in pdf.pages])
         except Exception:
             text = ""
-        # Get embedding for resume text
         resume_embedding = model.encode(text, convert_to_tensor=True)
-        # Compute cosine similarity (0 to 1)
-        similarity = float(util.cos_sim(req_embedding, resume_embedding).item())
-        match_percent = int(similarity * 100)
+
+        # Find best matching job role
+        best_match = None
+        best_similarity = -1
+        best_title = None
+        for role in job_roles_info:
+            similarity = float(util.cos_sim(role["embedding"], resume_embedding).item())
+            if similarity > best_similarity:
+                best_similarity = similarity
+                best_title = role["title"]
+
+        match_percent = int(best_similarity * 100)
         if match_percent >= 80:
             color = "green"
         elif match_percent >= 50:
@@ -127,5 +141,11 @@ def get_shortlist(db: Session = Depends(get_db)):
         res.color = color
         res.is_new = 0  # Mark as processed
         db.commit()
-        results.append({"name": res.name, "match": match_percent, "color": color})
+        results.append({
+            "name": res.name,
+            "match": match_percent,
+            "color": color,
+            "best_title": best_title,
+            "best_similarity": match_percent
+        })
     return {"results": results}
