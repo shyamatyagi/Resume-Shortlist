@@ -7,7 +7,8 @@ function App() {
   const [results, setResults] = useState([]);
 
   const handleFileChange = (e) => {
-    setFiles(e.target.files);
+    const selectedFiles = Array.from(e.target.files).slice(0, 10);
+    setFiles(selectedFiles);
   };
 
   const handleRequirementChange = (e) => {
@@ -44,6 +45,9 @@ function App() {
       <h1>Resume Shortlisting App</h1>
       <div>
         <input type="file" multiple onChange={handleFileChange} />
+        <span style={{ marginLeft: 8, marginRight: 8, color: "gray" }}>
+          (Max 10 PDFs)
+        </span>
         <button onClick={handleUpload}>Upload Resumes</button>
       </div>
       {/* <div style={{ marginTop: 16 }}>
@@ -55,16 +59,45 @@ function App() {
         />
         <button onClick={handleAddRequirement}>Add Requirement</button>
       </div> */}
+
       <div style={{ marginTop: 16 }}>
         <button onClick={handleShortlist}>Get Shortlist</button>
-        <ul>
-          {results.map((r, i) => (
-            <li key={i} style={{ color: r.color }}>
-              {r.name} - {r.match}%
-              {r.best_title ? ` (Best Title: ${r.best_title})` : ""}
-            </li>
-          ))}
-        </ul>
+        <table
+          style={{ width: "100%", marginTop: 16, borderCollapse: "collapse" }}
+        >
+          <thead>
+            <tr>
+              <th style={{ border: "1px solid #ccc", padding: 8 }}>Rank</th>
+              <th style={{ border: "1px solid #ccc", padding: 8 }}>
+                File Name
+              </th>
+              <th style={{ border: "1px solid #ccc", padding: 8 }}>
+                Similarity (%)
+              </th>
+              <th style={{ border: "1px solid #ccc", padding: 8 }}>Domain</th>
+            </tr>
+          </thead>
+          <tbody>
+            {results
+              .sort((a, b) => b.match - a.match)
+              .map((r, i) => (
+                <tr key={i}>
+                  <td style={{ border: "1px solid #ccc", padding: 8 }}>
+                    {i + 1}
+                  </td>
+                  <td style={{ border: "1px solid #ccc", padding: 8 }}>
+                    {r.name}
+                  </td>
+                  <td style={{ border: "1px solid #ccc", padding: 8 }}>
+                    {r.match}
+                  </td>
+                  <td style={{ border: "1px solid #ccc", padding: 8 }}>
+                    {r.best_title || "-"}
+                  </td>
+                </tr>
+              ))}
+          </tbody>
+        </table>
       </div>
     </div>
   );
